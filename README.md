@@ -1,5 +1,7 @@
 # Article Video Producer
 
+![Article Video Producer workflow](assets/workflow-overview.svg)
+
 `article-video-producer` is an AI-agent skill for turning a long-form article or Markdown note into a narrated video package:
 
 - lightly conversational spoken script
