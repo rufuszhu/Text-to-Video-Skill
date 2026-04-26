@@ -1,0 +1,37 @@
+{
+  "skill_name": "article-video-producer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Turn samples/gettysburg-address.md into a narrated explainer video package in the article's language. Keep the author's structure and style, make the script lightly conversational where appropriate, use Qwen3-TTS for narration, create a sidecar SRT subtitle plan, create image prompt plans, and produce a render plan for a 16:9 YouTube-style video. Do not burn subtitles into the video and do not actually call paid image APIs.",
+      "expected_output": "A run folder under VaultRoot/video with original.md and spoken_script.md saved first, then a pause for user confirmation before narration/subtitles/image planning. After confirmation, the workflow should use bundled scripts where possible for narration segments, Qwen3-TTS chunked generation, SRT reflow/QC, contact sheet creation, and ffmpeg rendering. It should include visual_entities.md, image style guide/prompts with named public figures and documentary-realistic visuals, a second pause for image plan confirmation before image generation, a static-image timeline by default unless the user explicitly asks for motion, and a renderer choice that keeps subtitles external.",
+      "files": [
+        "samples/gettysburg-address.md"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I have a 1800-word Spanish Markdown essay and a 45-second sample of my own voice. Create the artifacts needed for a 9:16 short-video version: rewritten spoken script, segment plan, Qwen3-TTS voice-clone audio workflow, external SRT subtitles, image prompts, and a CLI render approach.",
+      "expected_output": "A vertical-video production package stored under VaultRoot/video that follows the article language, pauses after the spoken script for user edits, handles short-form pacing, Qwen3-TTS voice-cloning requirements using the bundled chunked narration helper, sidecar subtitle readability using the SRT reflow helper, coherent documentary-realistic image style, visual entity/person planning, contact sheet preview after image generation, pauses again after the image segmentation and prompts for user edits, and then continues to CLI rendering with external subtitles.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Make an article-to-video workflow for an English essay where the MP4 should not contain burned-in subtitles. I only want a final.mp4 plus a final.srt sidecar file, with Qwen3-TTS narration and generated images.",
+      "expected_output": "A plan that stores all outputs under VaultRoot/video, pauses for confirmation after the spoken script, produces a clean MP4 without burned-in captions and a separate calibrated SRT sidecar, uses Qwen3-TTS for narration through the bundled helper, creates visual entity and documentary-realistic image plans, creates a contact sheet after image generation, and pauses again for confirmation after the visual segmentation and image prompts before generating images.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Use the article-video-producer workflow for a Markdown essay in my vault. I want to review the conversational script before audio generation, and I want to review the image segmentation and prompts before any images are generated.",
+      "expected_output": "The workflow should create a fresh folder under VaultRoot/video, save script/spoken_script.md, stop until user confirmation, reread the possibly edited script, later save images/visual_entities.md, images/style_guide.md, images/image_plan.md, and images/image_prompts.json, stop again until user confirmation, reread the possibly edited visual plan, and only then generate images.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Turn a geopolitical Markdown essay that mentions Trump, Netanyahu, Mojtaba Khamenei, Gaddafi, and Kim Jong Un into a video package. I want realistic visuals that feel like contemporary news/documentary scenes, not sci-fi, and I do not want animated image motion.",
+      "expected_output": "The workflow should extract named public figures into images/visual_entities.md, plan relevant scenes that show those figures, use documentary-realistic prompts with short non-person labels where helpful, explicitly avoid sci-fi/futuristic imagery, create a contact sheet preview after image generation, honor the user's no-animation request by building a static-image timeline, and render without burned-in subtitles.",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+qwen-tts
+stable-ts
+faster-whisper
+soundfile
+numpy
+torch
+pillow

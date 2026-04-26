@@ -1,0 +1,33 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments and secrets
+.env
+.env.*
+.venv/
+venv/
+.article-video-venv/
+
+# Model caches and generated project output
+article-video-setup/
+video/
+output/
+runs/
+*.mp4
+*.mov
+*.wav
+*.m4a
+*.mp3
+
+# Voice references should be private unless deliberately provided as public samples.
+**/voice_reference/
+**/reference.wav
+**/reference.txt
+
+# Generated image batches can get large.
+**/scene_*.png
+**/contact_sheet.png
