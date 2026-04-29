@@ -1,6 +1,6 @@
 ---
 name: article-video-producer
-description: Turn a long-form article or Obsidian note into a narrated video with a lightly conversational script, Qwen3-TTS voiceover in the article's language, sidecar SRT subtitles, consistent AI-generated images, and a CLI-rendered final video. Use this skill whenever the user asks to make a video from an article, blog post, essay, newsletter, Markdown file, or script, especially when they mention voice cloning, subtitles, SRT, ChatGPT/OpenAI image generation, Remotion, ffmpeg, faster-whisper, stable-ts, or generating a YouTube/Bilibili/TikTok-style explainer video.
+description: Use when producing a narrated video from an article, Obsidian note, essay, newsletter, Markdown file, or script, especially when the task involves Qwen3-TTS narration, sidecar SRT subtitles, image generation, ffmpeg/Remotion rendering, or fixing subtitle/image timing in an explainer-style video workflow.
 ---
 
 # Article Video Producer
@@ -53,6 +53,19 @@ If that folder already exists, append a timestamp such as `<article-stem>-video-
 
 If the full render cannot be completed because a local model, GPU, API key, or video dependency is missing, still produce every upstream artifact possible and write exact next commands in `production_notes.md`.
 
+Treat the tree above as an in-progress production workspace. After the final video has been verified and the user asks for cleanup or has opted into cleanup for the run, compact the workspace using the retention policy below. Do not delete working files before final verification.
+
+Default retained archive after cleanup:
+
+- Final MP4 and sidecar SRT in `video/`.
+- Final normalized narration audio in `audio/`.
+- Final scene images in `images/scene_###.png`.
+- Image prompts and image plan in `images/image_prompts.json` and `images/image_plan.md`.
+- Approved spoken script in `script/spoken_script.md`.
+- `production_notes.md`.
+
+Everything else is considered reproducible working data unless the user asks to preserve it: raw TTS chunks, per-segment audio files, unnormalized narration WAVs, intermediate subtitle/alignment files, visual-track MP4s, render segment clips, concat lists, QC frames, copied one-off helper scripts, contact sheets, voice-reference copies, older alternate renders, and timeline/debug JSON files. When multiple final versions exist, confirm which version is canonical before deleting the older MP4/SRT/audio pair.
+
 ## Bundled Scripts
 
 Prefer the reusable scripts in this skill's `scripts/` directory over writing one-off project-local scripts:
@@ -60,7 +73,7 @@ Prefer the reusable scripts in this skill's `scripts/` directory over writing on
 | Script | Purpose |
 |---|---|
 | `scripts/build_narration_segments.py` | Build `script/narration_segments.json` and `script/spoken_script.txt` from the approved spoken script, optionally using a marker plan. |
-| `scripts/generate_qwen_narration.py` | Generate Qwen3-TTS model-voice or cloned narration in per-segment chunks, reuse good segments, detect obvious duration outliers, and write `audio/segments_manifest.json`. |
+| `scripts/generate_qwen_narration.py` | Generate Qwen3-TTS model-voice or cloned narration in per-segment chunks, reuse good segments, detect obvious duration outliers, and write `audio/segments_manifest.json`. Pair it with post-TTS audio QC before treating the narration as final. |
 | `scripts/reflow_srt.py` | Clean stable-ts/faster-whisper SRT output, remove inline tags, reflow cues for mobile readability, copy `video/final.srt`, and write `subtitle_qc.md`. |
 | `scripts/make_contact_sheet.py` | Create `images/contact_sheet.html` and, when Pillow is available, `images/contact_sheet.png` for quick visual review before rendering. |
 | `scripts/render_video.py` | Render `video/final.mp4` from scene images, audio, and sidecar SRT using ffmpeg, with external subtitles only. |
@@ -149,6 +162,16 @@ ffmpeg -i audio/narration.wav -af loudnorm=I=-16:TP=-1.5:LRA=11 audio/narration_
 
 For longer scripts, split each narration segment into sentence- or paragraph-level chunks before sending text to Qwen3-TTS, then concatenate the chunk audio back into the segment. This prevents runaway generations and makes failures cheap to retry. After generation, write `audio/segments_manifest.json` and sanity-check every segment duration against the expected script length; rerun obvious outliers instead of letting a bad segment propagate into subtitles and rendering.
 
+Post-TTS audio QC is mandatory before subtitle alignment or rendering:
+
+- Keep the chunk- and segment-level intermediates until narration QC passes. Do not clean up `audio/segments/`, `audio/segment_chunks/`, or `audio/segments_manifest.json` immediately after a seemingly successful generation.
+- Check each chunk and each assembled segment for long low-energy spans, not just total duration. A failed generation may contain audible room tone, hiss, or other background noise instead of digital silence.
+- Use `ffmpeg` low-energy detection as the first-pass screen. `silencedetect` is acceptable even when the bad region is not perfectly silent, as long as the `noise` threshold is tuned high enough to classify the noisy tail as low-energy non-speech.
+- Treat long low-energy spans in the middle of narration as defects even if the total segment duration looks plausible. A good default policy is to flag mid-segment low-energy regions over roughly 2-3 seconds and suspicious tail regions over roughly 1-2 seconds.
+- If the first-pass thresholding is ambiguous because the noise floor is high or unstable, run a second-pass speech-presence check on only the suspicious chunk or span. Use VAD, ASR alignment coverage, or another "is there actually speech here?" check rather than relying on waveform energy alone.
+- Prefer the cheapest repair that removes the defect: regenerate only the bad chunk when possible, otherwise regenerate the affected segment and rebuild downstream audio/subtitles from there.
+- Do not proceed to subtitle alignment, image-to-audio timing, or final render until the narration passes this QC.
+
 Prefer `scripts/generate_qwen_narration.py` for this step:
 
 ```bash
@@ -173,9 +196,15 @@ Do not assume the TTS system emits usable subtitles. Most TTS tools produce audi
 
 Preferred subtitle path:
 
-1. Use `stable-ts` to align the known-correct `spoken_script.md` to `audio/narration_normalized.wav`.
+1. Use `stable-ts` to align the known-correct narration text to `audio/narration_normalized.wav`.
 2. Export SRT for compatibility.
 3. If `stable-ts` is unavailable, use `faster-whisper` to transcribe audio into SRT, then run a calibration pass against `spoken_script.md`.
+
+For the alignment text source:
+
+- Prefer `script/spoken_script.txt` when it exists. It is the cleanest exact-text alignment input because it strips markdown headings and formatting while preserving the approved spoken wording.
+- If `script/spoken_script.txt` does not exist, use the approved `script/spoken_script.md` content after removing markdown-only structure that should not be spoken.
+- Do not align from `script/original.md` unless the spoken script is intentionally identical.
 
 Calibration pass:
 
@@ -183,6 +212,12 @@ Calibration pass:
 - Fix ASR errors, missing punctuation, wrong names, wrong numbers, and language-specific homophone or tokenization mistakes.
 - Keep timing from the aligned/transcribed result unless the text correction changes segment length dramatically.
 - Write `subtitles/subtitle_qc.md` with any unresolved mismatches.
+
+Final-delivery rule:
+
+- When `stable-ts` is available and can align the approved narration text, treat that aligned timing as the final subtitle source of truth.
+- Segment-derived, sentence-weighted, or manifest-estimated subtitle timing is acceptable only as a draft fallback when true alignment is unavailable or clearly broken. Do not ship those estimated timings as the final sidecar SRT when `stable-ts` worked.
+- If `stable-ts` partially fails, preserve the aligned result, document the imperfect portions in `subtitle_qc.md`, and only patch the affected regions instead of discarding the whole alignment.
 
 After the alignment/transcription tool writes `subtitles/transcript_raw.srt`, prefer `scripts/reflow_srt.py` for cleanup and sidecar copying:
 
@@ -290,6 +325,8 @@ Create `video/timeline.json` by mapping image scenes to subtitle/audio time rang
 
 Use subtitle time ranges as the source of truth once subtitles exist. Before subtitles exist, use narration segment estimates and revise later.
 
+If the approved visual plan has more image scenes than narration segments, do not collapse back to one image per narration segment. Build a scene-level timeline by splitting the segment window at subtitle/audio anchor points from the approved image plan so each planned scene gets its own start/end range.
+
 Use `static` as the default motion mode. Static images are more reliable for long narrated essays because very slow ffmpeg pan/zoom can show pixel-step stutter on some images and players. Use `ultra_slow_pan_zoom` only when the user explicitly asks for motion or approves it after seeing a test render. If any pan/zoom looks jittery, re-render with `static` rather than trying to hide the artifact. When mapping scenes to narration segments, include inter-segment pauses so the visual track never ends before the audio; a scene should usually run until the next scene starts, and the final scene should run through the audio end.
 
 ### 7. Render Video
@@ -298,13 +335,17 @@ Preferred renderer: ffmpeg still-image slideshow with static images unless the u
 
 Use ffmpeg directly for simple slideshow-style renders. For `static`, render each still image as an unmoving clip. For optional `ultra_slow_pan_zoom`, use the bundled renderer's oversampled mode so ffmpeg renders motion at a higher resolution and downsamples to reduce pixel-step stutter; still re-render static if the result is not smooth. Because subtitles are external sidecar files, ffmpeg does not need `libass`, `subtitles`, or `drawtext` support.
 
-Prefer `scripts/render_video.py` for the ffmpeg render:
+Prefer `scripts/render_video.py` for the ffmpeg render when the visual track is effectively one scene per narration segment:
 
 ```bash
 python /path/to/article-video-producer/scripts/render_video.py --project <project-folder>
 ```
 
+If the visual plan introduces multiple scenes inside one narration segment, first build a scene-level `video/timeline.json` from subtitle/audio anchors and then render from that scene-level timeline. Do not force the project back into one image per narration segment just because the default renderer is simpler.
+
 After rendering `video/final.mp4`, copy `subtitles/subtitles_aligned.srt` to `video/final.srt`. Keep the subtitle file separate from the video.
+
+If only the sidecar subtitle timing or wording needs correction, regenerate and replace `video/final.srt` without rerendering `video/final.mp4`. Sidecar subtitle fixes do not require an MP4 rerender unless the visual timeline itself is changing.
 
 Keep the final output:
 
@@ -318,6 +359,8 @@ Keep the final output:
 Before calling the work done:
 
 - Play or inspect the final video duration with `ffprobe`.
+- Review narration audio before or alongside final video QC. Sample suspicious regions from the chunk, segment, and full narration levels instead of trusting the muxed MP4 alone.
+- Confirm there are no long low-energy or no-speech spans inside spoken sections. Do not rely solely on full-file duration checks.
 - Verify audio duration and video duration differ by less than 0.5 seconds.
 - Confirm subtitles start near 0 and end before or at audio end.
 - Confirm `video/final.mp4` has no burned-in subtitle text and `video/final.srt` exists.
@@ -327,6 +370,33 @@ Before calling the work done:
 - Check that important named public figures and visual entities from `images/visual_entities.md` appear in the planned scenes, or note why they were omitted.
 - Check that any visible text requested in the prompts is short, useful, and not misleading.
 - Read `subtitle_qc.md`; unresolved text mismatches must be mentioned to the user.
+
+### 9. Cleanup After Approval
+
+If the user asks to clean the project after the final render, keep the compact archive described in the Output Contract and remove reproducible intermediates. Before deleting, identify the canonical final version and make sure its MP4, SRT, normalized audio, scene images, image prompts/plan, spoken script, and production notes exist.
+
+Do not clean up narration intermediates before the narration has passed post-TTS QC and any required subtitle/audio rebuilds are complete.
+
+For the default cleanup profile, keep:
+
+- `video/final*.mp4` only for the canonical final version.
+- `video/final*.srt` only for the canonical final version.
+- `audio/*normalized*.wav` only for the canonical final version.
+- `images/scene_###.png`.
+- `images/image_prompts.json`.
+- `images/image_plan.md`.
+- `script/spoken_script.md`.
+- `production_notes.md`.
+
+Remove:
+
+- `audio/segments*/`, `audio/segment_chunks*/`, raw `audio/narration*.wav` files that are not the retained normalized final audio, copied voice-reference files, and TTS manifests unless explicitly needed for debugging.
+- `subtitles/` raw transcript, aligned subtitle, timing, and QC files after the final sidecar SRT has been copied into `video/`.
+- `video/render_segments*/`, `video/visual_track*.mp4`, `video/render_concat*.txt`, `video/qc_frames*/`, old alternate final renders, and timeline/debug JSON files not needed for the retained final.
+- Copied project-local helper scripts that duplicate bundled `scripts/` functionality.
+- `images/contact_sheet.*`, `images/style_guide.md`, and `images/visual_entities.md` unless the user wants a full visual audit trail.
+
+After cleanup, verify the retained files still exist and report the before/after directory size.
 
 ## Tool Notes
 
